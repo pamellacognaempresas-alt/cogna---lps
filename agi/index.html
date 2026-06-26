@@ -10410,6 +10410,82 @@
             }
           }
         </style>
+  <style id="hero-brands-flow-fix">
+  .hero {
+    min-height: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    align-items: start !important;
+  }
+
+  .hero > * {
+    align-self: start !important;
+  }
+
+  .premium-capture-card,
+  .hero-card {
+    align-self: start !important;
+    height: auto !important;
+    margin-bottom: 0 !important;
+  }
+
+  .network-brands {
+    clear: both !important;
+    position: relative !important;
+    z-index: 1 !important;
+    margin-top: 0 !important;
+    padding-top: 28px !important;
+    overflow: visible !important;
+  }
+
+  .network-brands-card,
+  .brands-marquee,
+  .brands-track {
+    overflow: visible !important;
+  }
+
+  .brands-marquee {
+    min-height: 72px !important;
+  }
+
+  .brands-track {
+    align-items: center !important;
+    min-height: 72px !important;
+  }
+
+  .brand-item {
+    height: 72px !important;
+    min-height: 72px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .brand-item img {
+    display: block !important;
+    width: auto !important;
+    height: auto !important;
+    max-height: 56px !important;
+    max-width: 100% !important;
+    object-fit: contain !important;
+  }
+
+  @media (max-width: 720px) {
+    .brands-marquee,
+    .brands-track {
+      min-height: 62px !important;
+    }
+
+    .brand-item {
+      height: 62px !important;
+      min-height: 62px !important;
+    }
+
+    .brand-item img {
+      max-height: 48px !important;
+    }
+  }
+</style>
 </head>
 <body>
   <div class="page">
