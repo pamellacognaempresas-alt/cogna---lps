@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cogna Empresas</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+html,body{margin:0;min-height:100%;background:#f8fafc;font-family:Inter,Arial,sans-serif}
+#status{min-height:100vh;display:grid;place-items:center;color:#64748b;font-size:14px;padding:24px;text-align:center}
+iframe{border:0;width:100%;height:100vh;display:none;background:#fff}
+</style>
+</head>
+<body>
+<div id="status">Carregando Landing Page...</div>
+<iframe id="lpFrame" title="Landing Page Cogna Empresas" sandbox="allow-scripts allow-forms allow-popups allow-same-origin"></iframe>
+
+<script>
+const SUPABASE_URL='https://gyrdinucqulbqeiykpmz.supabase.co';
+const SUPABASE_KEY='sb_publishable_xjHd__1YHMFojS2FqwP8Lw_ApELvTkS';
+
+function getSlugFromPath(){
+  const path=decodeURIComponent(location.pathname||'/')
+    .replace(/^\/+|\/+$/g,'');
+  return path.split('/')[0]||'';
+}
+
+function patchGeneratedHtml(html,ctx){
+  let out=String(html||'');
+
+  // Faz LPs antigas e novas usarem o projeto Supabase atual.
+  out=out.replace(
+    /const\s+SUPABASE_URL\s*=\s*["'][^"']+["'];?/g,
+    `const SUPABASE_URL = ${JSON.stringify(SUPABASE_URL)};`
+  );
+  out=out.replace(
+    /const\s+SUPABASE_KEY\s*=\s*["'][^"']+["'];?/g,
+    `const SUPABASE_KEY = ${JSON.stringify(SUPABASE_KEY)};`
+  );
+
+  const contextScript=`<script>
+    window.COGNA_LP_IDS=${JSON.stringify(ctx)};
+  <\/script>`;
+
+  if(out.includes('</head>')) out=out.replace('</head>',contextScript+'</head>');
+  else out=contextScript+out;
+
+  // Se a LP ainda não grava os vínculos, injeta automaticamente.
+  if(!out.includes('company_id: window.COGNA_LP_IDS')){
+    out=out.replace(
+      /source_url:\s*window\.location\.href,\s*status:\s*["']novo["']/,
+      `source_url: window.location.href,
+       company_id: window.COGNA_LP_IDS?.company_id || null,
+       lp_id: window.COGNA_LP_IDS?.lp_id || null,
+       consultant_id: window.COGNA_LP_IDS?.consultant_id || null,
+       source_type: "lp",
+       status: "novo"`
+    );
+  }
+  return out;
+}
+
+(async()=>{
+  const slug=getSlugFromPath();
+  const status=document.getElementById('status');
+  const frame=document.getElementById('lpFrame');
+
+  if(!slug){
+    status.textContent='Landing Page não informada.';
+    return;
+  }
+
+  try{
+    const client=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+    const {data,error}=await client.from('landing_pages')
+      .select('id,name,generated_html,status,company_id,consultant_id,slug')
+      .eq('slug',slug)
+      .eq('status','published')
+      .single();
+
+    if(error||!data) throw error||new Error('LP não encontrada');
+
+    document.title=data.name+' | Cogna Empresas';
+
+    frame.srcdoc=patchGeneratedHtml(data.generated_html,{
+      lp_id:data.id,
+      company_id:data.company_id,
+      consultant_id:data.consultant_id,
+      slug:data.slug
+    });
+
+    frame.style.display='block';
+    status.style.display='none';
+  }catch(e){
+    console.error('Erro ao carregar LP:',e);
+    status.innerHTML='Esta Landing Page não está disponível ou ainda não foi publicada.';
+  }
+})();
+</script>
+</body>
+</html>
