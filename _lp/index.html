@@ -4,31 +4,76 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Cogna Empresas</title>
+<meta name="cogna-public-loader-version" content="v186-final-top-level">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 html,body{margin:0;min-height:100%;background:#f8fafc;font-family:Inter,Arial,sans-serif}
 #status{min-height:100vh;display:grid;place-items:center;color:#64748b;font-size:14px;padding:24px;text-align:center}
-iframe{border:0;width:100%;height:100vh;display:none;background:#fff}
 </style>
 </head>
 <body>
 <div id="status">Carregando Landing Page...</div>
-<iframe id="lpFrame" title="Landing Page Cogna Empresas" sandbox="allow-scripts allow-forms allow-popups allow-same-origin"></iframe>
 
 <script>
 const SUPABASE_URL='https://gyrdinucqulbqeiykpmz.supabase.co';
 const SUPABASE_KEY='sb_publishable_xjHd__1YHMFojS2FqwP8Lw_ApELvTkS';
 
-function getSlugFromPath(){
-  const path=decodeURIComponent(location.pathname||'/')
-    .replace(/^\/+|\/+$/g,'');
-  return path.split('/')[0]||'';
-}
-
-function patchGeneratedHtml(html,ctx){
+function cleanLegacyWhatsappV186(html){
   let out=String(html||'');
 
-  // Faz LPs antigas e novas usarem o projeto Supabase atual.
+  // Remove correções antigas que podiam conflitar ou travar cliques.
+  out=out.replace(
+    /<script[^>]+id=["']cogna-whatsapp-fix-v(?:175|176|177|183|184|185)["'][^>]*>[\s\S]*?<\/script>/gi,
+    ''
+  );
+  out=out.replace(
+    /<script[^>]+id=["']cogna-whatsapp-top-level-v185["'][^>]*>[\s\S]*?<\/script>/gi,
+    ''
+  );
+  out=out.replace(
+    /<meta[^>]+name=["']cogna-whatsapp-fix["'][^>]*>/gi,
+    ''
+  );
+  out=out.replace(
+    /<meta[^>]+name=["']cogna-whatsapp-link-clean["'][^>]*>/gi,
+    ''
+  );
+
+  // Normaliza URLs antigas.
+  out=out.replace(
+    /https:\/\/api\.whatsapp\.com\/send\?([^"'\\s<]+)/gi,
+    (full,query)=>{
+      try{
+        const params=new URLSearchParams(query.replace(/&amp;/g,'&'));
+        const phone=String(params.get('phone')||'').replace(/\D/g,'');
+        const text=params.get('text')||'';
+        if(!phone)return full;
+        return 'https://wa.me/'+phone+(text?'?text='+encodeURIComponent(text):'');
+      }catch(e){return full}
+    }
+  );
+
+  // Garante target externo em qualquer link de WhatsApp.
+  out=out.replace(
+    /<a\b([^>]*?)href=(["'])(https?:\/\/(?:api\.)?whatsapp\.com[^"']*|https?:\/\/wa\.me[^"']*)\2([^>]*)>/gi,
+    (full,before,quote,href,after)=>{
+      let attrs=(before||'')+'href='+quote+href+quote+(after||'');
+      attrs=attrs.replace(/\s+target=(["'])[^"']*\1/gi,'');
+      attrs=attrs.replace(/\s+rel=(["'])[^"']*\1/gi,'');
+      return '<a'+attrs+' target="_blank" rel="noopener noreferrer">';
+    }
+  );
+
+  return out;
+}
+
+function patchGeneratedHtmlV186(html,ctx){
+  let out=cleanLegacyWhatsappV186(html);
+
+  // Mantém o Supabase apontando para o projeto correto.
   out=out.replace(
     /const\s+SUPABASE_URL\s*=\s*["'][^"']+["'];?/g,
     `const SUPABASE_URL = ${JSON.stringify(SUPABASE_URL)};`
@@ -38,64 +83,135 @@ function patchGeneratedHtml(html,ctx){
     `const SUPABASE_KEY = ${JSON.stringify(SUPABASE_KEY)};`
   );
 
-  const contextScript=`<script>
-    window.COGNA_LP_IDS=${JSON.stringify(ctx)};
-  <\/script>`;
-
-  if(out.includes('</head>')) out=out.replace('</head>',contextScript+'</head>');
+  const contextScript=`<script>window.COGNA_LP_IDS=${JSON.stringify(ctx)};<\/script>`;
+  const closeHead=out.toLowerCase().lastIndexOf('</head>');
+  if(closeHead>=0) out=out.slice(0,closeHead)+contextScript+'\n'+out.slice(closeHead);
   else out=contextScript+out;
 
-  // Se a LP ainda não grava os vínculos, injeta automaticamente.
+  // Compatibilidade: LPs antigas sem CPF.
+  if(!out.includes('name="cpf"') && out.includes('id="lpLeadEmail"')){
+    out=out.replace(
+      /(<div class="lp-lead-field lp-lead-col-12">\s*<label for="lpLeadEmail">E-mail<\/label>[\s\S]*?<\/div>)/,
+      `$1
+       <div class="lp-lead-field lp-lead-col-12">
+         <label for="lpLeadCpf">CPF do aluno</label>
+         <input id="lpLeadCpf" name="cpf" inputmode="numeric" autocomplete="off" placeholder="000.000.000-00" maxlength="14" required>
+         <span class="lp-lead-help">O CPF é usado para identificar se este aluno já entrou anteriormente.</span>
+       </div>`
+    );
+  }
+
+  if(out.includes('formData.get("email")') && !out.includes('formData.get("cpf")')){
+    out=out.replace(
+      /email:\s*String\(formData\.get\("email"\)\s*\|\|\s*""\)\.trim\(\),/,
+      `email: String(formData.get("email") || "").trim(),
+       cpf: String(formData.get("cpf") || "").replace(/\\D/g, ""),`
+    );
+  }
+
   if(!out.includes('company_id: window.COGNA_LP_IDS')){
     out=out.replace(
       /source_url:\s*window\.location\.href,\s*status:\s*["']novo["']/,
       `source_url: window.location.href,
-       company_id: window.COGNA_LP_IDS?.company_id || null,
-       lp_id: window.COGNA_LP_IDS?.lp_id || null,
-       consultant_id: window.COGNA_LP_IDS?.consultant_id || null,
-       source_type: "lp",
-       status: "novo"`
+                company_id: window.COGNA_LP_IDS?.company_id || null,
+                lp_id: window.COGNA_LP_IDS?.lp_id || null,
+                consultant_id: window.COGNA_LP_IDS?.consultant_id || null,
+                source_type: "lp",
+                status: "novo"`
     );
   }
+
+  // Tratamento leve no topo da página. Como não existe iframe, o navegador
+  // pode abrir wa.me / WhatsApp normalmente.
+  const waGuard=`<script id="cogna-whatsapp-v186">
+  (function(){
+    function isWa(href){
+      return /^(?:https?:\\/\\/)?(?:api\\.)?whatsapp\\.com\\b/i.test(String(href||'')) ||
+             /^(?:https?:\\/\\/)?wa\\.me\\b/i.test(String(href||''));
+    }
+    function normalize(href){
+      try{
+        const u=new URL(href,location.href);
+        if(u.hostname==='api.whatsapp.com' && u.pathname==='/send'){
+          const phone=(u.searchParams.get('phone')||'').replace(/\\D/g,'');
+          const text=u.searchParams.get('text')||'';
+          if(phone)return 'https://wa.me/'+phone+(text?'?text='+encodeURIComponent(text):'');
+        }
+      }catch(e){}
+      return href;
+    }
+    function patch(a){
+      if(!a)return;
+      const href=a.getAttribute('href')||'';
+      if(!isWa(href))return;
+      const finalUrl=normalize(href);
+      if(finalUrl!==href)a.setAttribute('href',finalUrl);
+      a.setAttribute('target','_blank');
+      a.setAttribute('rel','noopener noreferrer');
+    }
+    document.querySelectorAll('a[href]').forEach(patch);
+    document.addEventListener('click',function(ev){
+      const a=ev.target?.closest?.('a[href]');
+      if(!a)return;
+      patch(a);
+    },true);
+  })();
+  <\/script>`;
+
+  const closeBody=out.toLowerCase().lastIndexOf('</body>');
+  if(closeBody>=0) out=out.slice(0,closeBody)+waGuard+'\n'+out.slice(closeBody);
+  else out+=waGuard;
+
   return out;
 }
 
-(async()=>{
-  const slug=getSlugFromPath();
-  const status=document.getElementById('status');
-  const frame=document.getElementById('lpFrame');
+async function loadPublicLpV186(){
+  const qs=new URLSearchParams(location.search);
+  const slugFromQuery=qs.get('slug');
+  const slugFromPath=location.pathname.replace(/^\/+|\/+$/g,'').split('/').filter(Boolean).pop();
+  const slug=(slugFromQuery || (slugFromPath && !/\.html?$/i.test(slugFromPath) ? slugFromPath : '') || '').trim();
 
+  const status=document.getElementById('status');
   if(!slug){
     status.textContent='Landing Page não informada.';
     return;
   }
 
   try{
+    if(!window.supabase?.createClient)throw new Error('Supabase SDK não carregou.');
+
     const client=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
     const {data,error}=await client.from('landing_pages')
-      .select('id,name,generated_html,status,company_id,consultant_id,slug')
+      .select('id,name,generated_html,status,company_id,consultant_id,updated_at')
       .eq('slug',slug)
-      .eq('status','published')
       .single();
 
-    if(error||!data) throw error||new Error('LP não encontrada');
+    if(error||!data)throw error||new Error('LP não encontrada.');
 
-    document.title=data.name+' | Cogna Empresas';
+    const normalized=String(data.status||'').trim().toLowerCase();
+    if(!['published','publicada'].includes(normalized))throw new Error('LP não publicada.');
+    if(!data.generated_html)throw new Error('LP sem HTML publicado.');
 
-    frame.srcdoc=patchGeneratedHtml(data.generated_html,{
+    const ctx={
       lp_id:data.id,
       company_id:data.company_id,
-      consultant_id:data.consultant_id,
-      slug:data.slug
-    });
+      consultant_id:data.consultant_id
+    };
 
-    frame.style.display='block';
-    status.style.display='none';
-  }catch(e){
-    console.error('Erro ao carregar LP:',e);
-    status.innerHTML='Esta Landing Page não está disponível ou ainda não foi publicada.';
+    const finalHtml=patchGeneratedHtmlV186(data.generated_html,ctx);
+
+    // Ponto estrutural: a LP substitui o loader.
+    // NÃO há iframe e NÃO há sandbox.
+    document.open();
+    document.write(finalHtml);
+    document.close();
+  }catch(err){
+    console.error('Erro ao carregar LP:',err);
+    status.textContent='Esta Landing Page não está disponível ou ainda não foi publicada.';
   }
-})();
+}
+
+loadPublicLpV186();
 </script>
 </body>
 </html>
